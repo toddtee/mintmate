@@ -1,105 +1,98 @@
-A fresh take on chess puzzle managment for coaches.
+# 🧩 Mintmate
 
-# mintmate_config.toml README
+**Mintmate** is a modular Python utility designed to streamline the process of generating and managing chess puzzles. It automates tasks such as puzzle extraction, screenshot capturing, and Excel report generation, making it an invaluable tool for chess enthusiasts and educators.
 
-This README explains how to configure `mintmate_config.toml` for the puzzle-export script.
+---
 
-## Overview
-The `mintmate_config.toml` file specifies:
-- Where to find your Lichess puzzles CSV (`csv_path`)
-- Where to save outputs (`output_dir`)
-- Which board and piece style to use (`board_theme`, `piece_style`)
-- Which puzzle batches to generate (`[[puzzles]]` sections)
+## 🚀 Features
 
-## Top-Level Fields
+* **Modular Architecture**: The monolithic `getpuzzle.py` has been refactored into discrete modules for better maintainability and scalability.
+* **Puzzle Extraction**: Efficiently fetches puzzles from Lichess or other sources.
+* **Screenshot Capturing**: Automatically captures visual representations of puzzles.
+* **Excel Report Generation**: Compiles puzzles into well-structured Excel sheets for easy sharing and analysis.
+* **Configuration Management**: Utilizes `config.toml` for customizable settings.
 
-| Key           | Type   | Description                                                                                  |
-|---------------|--------|----------------------------------------------------------------------------------------------|
-| `csv_path`    | string | Path to the input CSV of all Lichess puzzles.                                               |
-| `output_dir`  | string | Directory where screenshots and XLSX files will be written.                                 |
-| `board_theme` | string | Lichess board theme identifier (e.g. `"blue"`, `"wood"`).                                   |
-| `piece_style` | string | Lichess piece style identifier (e.g. `"merida"`, `"alpha"`).                                |
+---
 
-## `[[puzzles]]` Array
+## 🛠️ Installation
 
-Each `[[puzzles]]` section defines a batch of puzzles:
-1. Filter by theme (case-insensitive substring match on the CSV’s `Themes` column).  
-2. Filter by rating range (`min_rating` ≤ puzzle.Rating ≤ `max_rating`).  
-3. Randomly select `count` puzzles.
+1. **Clone the Repository**:
 
-| Key          | Type   | Description                                                                      |
-|--------------|--------|----------------------------------------------------------------------------------|
-| `type`       | string | Lichess internal theme-ID to filter by (see below for valid values).            |
-| `min_rating` | int    | Minimum puzzle rating (inclusive).                                              |
-| `max_rating` | int    | Maximum puzzle rating (inclusive).                                              |
-| `count`      | int    | Number of puzzles to sample for this theme.                                      |
+   ```bash
+   git clone https://github.com/toddtee/mintmate.git
+   cd mintmate
+   ```
 
-### Example
+2. **Create a Virtual Environment**:
 
-```toml
-[[puzzles]]
-type       = "fork"
-min_rating = 1000
-max_rating = 1800
-count      = 10
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   ```
+
+3. **Install Dependencies**:
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+---
+
+## ⚙️ Usage
+
+1. **Configure Settings**:
+
+   Edit the `config.toml` file to specify your preferences, such as puzzle sources, output directories, and other parameters.
+
+2. **Run the Main Script**:
+
+   ```bash
+   python src/mintmate/main.py
+   ```
+
+   This will initiate the puzzle extraction, screenshot capturing, and Excel report generation processes based on your configurations.
+
+---
+
+## 📁 Project Structure
+
+```
+mintmate/
+├── config.toml               # Configuration file
+├── requirements.txt          # Python dependencies
+├── src/
+│   └── mintmate/
+│       ├── __init__.py
+│       ├── config_loader.py  # Handles configuration loading
+│       ├── excel_writer.py   # Manages Excel report generation
+│       ├── main.py           # Entry point of the application
+│       ├── puzzle_utils.py   # Utilities for puzzle processing
+│       └── screenshotter.py  # Handles screenshot capturing
 ```
 
-## Available `type` Values (internal theme-IDs)
+---
 
-These are the exact IDs from Lichess’s `puzzleTheme.xml` and the CSV’s `Themes` column.
+## 🧹 .gitignore Highlights
 
-### Game Phase
-```
-opening, middlegame, endgame
-```
+The `.gitignore` file has been updated to exclude:
 
-### Endgame Subtypes
-```
-rookEndgame, bishopEndgame, pawnEndgame,
-knightEndgame, queenEndgame, queenRookEndgame
-```
+* **Virtual Environments**: `.venv/`, `venv/`, `env/`
+* **IDE Configurations**: `.vscode/`
+* **Generated Files**: `puzzles/` directory containing screenshots and Excel files
+* **System Files**: `.DS_Store`
 
-### Basic Motifs
-```
-advancedPawn, attackingF2F7, capturingDefender,
-discoveredAttack, doubleCheck, exposedKing,
-fork, hangingPiece, kingsideAttack, pin,
-queensideAttack, sacrifice, skewer
-```
+---
 
-### Advanced Motifs
-```
-attraction, clearance, defensiveMove,
-deflection, interference, intermezzo, quietMove
-```
+## 🤝 Contributing
 
-### Mates
-```
-mateIn1, mateIn2, mateIn3, mateIn4, mateIn5,
-anastasiaMate, arabianMate, backRankMate,
-bodenMate, doubleBishopMate, dovetailMate,
-hookMate, killBoxMate, smotheredMate, vukovicMate
-```
+Contributions are welcome! Feel free to fork the repository and submit pull requests.
 
-### Special Moves
-```
-castling, promotion
-```
+---
 
-### Goals
-```
-equality, advantage, crushing
-```
+## 📄 License
 
-### Puzzle Lengths
-```
-oneMove, short, long
-```
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
-### Game Sources
-```
-master, masterVsMaster, superGM
-```
+---
 
-Copy any one of these strings (case-insensitive) into your `type` field to filter your CSV by that theme.
-
+For more information and updates, visit the [Mintmate GitHub Repository](https://github.com/toddtee/mintmate).
