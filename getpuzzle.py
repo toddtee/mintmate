@@ -40,8 +40,14 @@ def get_solution_san(original_fen, uci_moves):
     return [board.san(chess.Move.from_uci(u)) for u in ucs[1:]]
 
 
-def get_to_move_color(fen):
-    return "White" if fen.split()[1] == "w" else "Black"
+def get_to_move_color(fen, uci_moves):
+    # determine side to move after the initial setup move
+    board = chess.Board(fen)
+    ucs = uci_moves.split()
+    if ucs:
+        # discard the first setup move
+        board.push(chess.Move.from_uci(ucs[0]))
+    return "White" if board.turn else "Black"
 
 
 def screenshot_puzzle(puzzle_id, output_path, board_theme, piece_style):
@@ -82,7 +88,7 @@ if __name__ == "__main__":
     df = pd.read_csv(csv_path)
     os.makedirs(output_dir, exist_ok=True)
 
-    # prepare workbook with AnswerKey
+    # prepare workbook with hidden AnswerKey
     ts        = datetime.now().strftime("%Y-%m-%d_%H-%M")
     wb        = Workbook()
     main_ws   = wb.active
@@ -92,6 +98,7 @@ if __name__ == "__main__":
 
     answer_ws = wb.create_sheet(title="AnswerKey")
     answer_ws.append(["Puzzle ID","Answer"])
+    answer_ws.sheet_state = "hidden"
 
     screenshot_paths = []
     max_img_width    = 0
@@ -119,7 +126,7 @@ if __name__ == "__main__":
 
             sol_list = get_solution_san(fen, moves)
             sol_str  = ", ".join(sol_list)
-            tm       = get_to_move_color(fen)
+            tm       = get_to_move_color(fen, moves)
             screenshot_puzzle(pid, shot, board_theme, piece_style)
 
             # record answer in AnswerKey
@@ -143,9 +150,6 @@ if __name__ == "__main__":
             # add correctness formula in H
             main_ws.cell(row=row, column=8).value = f'=IF(G{row}=VLOOKUP(A{row},AnswerKey!$A:$B,2,FALSE),"✔ Correct","✘ Try again")'
 
-    # hide the answer key tab
-    wb["AnswerKey"].sheet_state = "hidden"
-
     # auto-fit columns
     col_lengths = {}
     for row in main_ws.iter_rows(min_row=1, max_row=main_ws.max_row, min_col=1, max_col=main_ws.max_column):
@@ -153,7 +157,6 @@ if __name__ == "__main__":
             ln = len(str(cell.value)) if cell.value is not None else 0
             col_lengths[cell.column] = max(col_lengths.get(cell.column, 0), ln)
     if max_img_width:
-        # screenshot col = 6
         col_lengths[6] = max(col_lengths.get(6, 0), int(max_img_width * 0.13))
     for col, ln in col_lengths.items():
         main_ws.column_dimensions[get_column_letter(col)].width = ln + 2
