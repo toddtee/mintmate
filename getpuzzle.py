@@ -94,7 +94,6 @@ if __name__ == "__main__":
     template = naming_cfg.get("template", "mintmate_puzzles_{timestamp}.xlsx")
     cleanup = naming_cfg.get("cleanup_screenshots", False)
 
-    # determine base directory & final filename
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
     if override_fn:
         final_filename = override_fn
@@ -105,99 +104,98 @@ if __name__ == "__main__":
         dir_name = os.path.splitext(final_filename)[0]
     dir_clean = dir_name.replace(" ", "")
 
-    # create output folder
     os.makedirs(base_output, exist_ok=True)
     out_dir = os.path.join(base_output, dir_clean)
     os.makedirs(out_dir, exist_ok=True)
 
-    # load puzzle data
     df = pd.read_csv(csv_path)
 
-    # setup workbook & answer key
     wb = Workbook()
-    answer_ws = wb.create_sheet(title="AnswerKey")
-    answer_ws.append(["Puzzle ID","Answer"])
-    answer_ws.sheet_state = "hidden"
-
     max_img_width = 0
 
-    # iterate puzzle sets or default
-    puzzle_sets = cfg.get("puzzle_sets")
-    if puzzle_sets:
-        sets = puzzle_sets
-    else:
-        sets = [{"sheet_name": "Puzzles", "puzzles": cfg.get("puzzles", [])}]
+    # single AnswerKey sheet capturing all sets
+    answer_ws = wb.create_sheet(title="AnswerKey")
+    answer_ws.append(["Set","Puzzle ID","Answer"])
+    answer_ws.sheet_state = "hidden"
 
-    for idx, pset in enumerate(sets):
-        sheet_name = pset.get("sheet_name", f"Set{idx+1}")
-        # create set-specific directory
-        sheet_dir = os.path.join(out_dir, sheet_name.replace(" ", ""))
+    puzzle_sets = cfg.get("puzzle_sets") or [{"sheet_name": "Puzzles", "puzzles": cfg.get("puzzles", [])}]
+
+    # create all necessary worksheets
+    for idx, pset in enumerate(puzzle_sets):
+        title = pset.get("sheet_name", f"Set{idx+1}")
+        if idx == 0:
+            ws = wb.active
+            ws.title = title
+        else:
+            ws = wb.create_sheet(title=title)
+        ws.append(["Puzzle ID","Type","Rating","To Move","Screenshot","Student Answer","Correct?","Lichess URL"])
+
+        # subdir for screenshots
+        sheet_dir = os.path.join(out_dir, title.replace(" ", ""))
         os.makedirs(sheet_dir, exist_ok=True)
 
-        ws = wb.active if idx == 0 else wb.create_sheet(title=sheet_name)
-        ws.title = sheet_name
-        ws.append(["Puzzle ID","Type","Rating","To Move","Lichess URL","Screenshot","Student Answer","Correct?"])
-
         for job in pset.get("puzzles", []):
-            theme, lo, hi, cnt = job["type"], job["min_rating"], job["max_rating"], job["count"]
+            theme, lo, hi, cnt = job.values()
+            subset = df[df["Themes"].str.contains(theme, case=False, na=False) &
+                        (df["Rating"] >= lo) & (df["Rating"] <= hi)]
             for _ in range(cnt):
-                sub = df[
-                    df["Themes"].str.contains(theme, case=False, na=False) &
-                    (df["Rating"] >= lo) &
-                    (df["Rating"] <= hi)
-                ]
-                if sub.empty:
+                if subset.empty:
                     continue
-                p = sub.sample(1).iloc[0]
+                p = subset.sample(1).iloc[0]
                 pid, fen, moves = p["PuzzleId"], p["FEN"], p["Moves"]
+                shot_path = os.path.join(sheet_dir, f"{pid}.png")
                 url = f"https://lichess.org/training/{pid}?theme={board_theme}&piece={piece_style}"
-                shot = os.path.join(sheet_dir, f"{pid}.png")
 
-                sol = get_solution_san(fen, moves)
-                answer_ws.append([pid, ", ".join(sol)])
+                sol_list = get_solution_san(fen, moves)
+                answer_ws.append([title, pid, ", ".join(sol_list)])
+
                 tm = get_to_move_color(fen, moves)
-                screenshot_puzzle(pid, shot, board_theme, piece_style)
+                screenshot_puzzle(pid, shot_path, board_theme, piece_style)
 
-                ws.append([pid, theme, p["Rating"], tm, url, "", "", ""])
+                ws.append([pid, theme, p["Rating"], tm, "", "", "", url])
                 r = ws.max_row
-                with Image.open(shot) as img:
+                with Image.open(shot_path) as img:
                     w, h = img.size
                 max_img_width = max(max_img_width, w)
-                ximg = XLImage(shot)
-                ximg.width, ximg.height = w, h
-                ws.add_image(ximg, f"F{r}")
+                img_obj = XLImage(shot_path)
+                img_obj.width, img_obj.height = w, h
+                ws.add_image(img_obj, f"E{r}")
                 ws.row_dimensions[r].height = h * 0.85
-                ws.cell(row=r, column=8).value = (
-                    f'=IF(G{r}="","",'
-                    f'IF(G{r}=VLOOKUP(A{r},AnswerKey!$A:$B,2,FALSE),"✅ Correct","❌ Try again"))'
+                ws.cell(row=r, column=7).value = (
+                    f'=IF(F{r}="","",'
+                    f'IF(F{r}=VLOOKUP(A{r},AnswerKey!$B:$C,2,FALSE),"✅ Correct","❌ Try again"))'
                 )
 
-    # auto-fit columns
+    # auto-fit columns except AnswerKey
     for sheet in wb.worksheets:
         if sheet.title == "AnswerKey":
             continue
         col_lens = {}
-        for row in sheet.iter_rows(min_row=1, max_row=sheet.max_row, min_col=1, max_col=sheet.max_column):
-            for cell in row:
-                val = cell.value if cell.value is not None else ""
-                ln = len(str(val))
-                col_lens[cell.column] = max(col_lens.get(cell.column, 0), ln)
+        for r in sheet.iter_rows(min_row=1, max_row=sheet.max_row, min_col=1, max_col=sheet.max_column):
+            for cell in r:
+                length = len(str(cell.value or ""))
+                col_lens[cell.column] = max(col_lens.get(cell.column, 0), length)
         if max_img_width > 0:
-            col_lens[6] = max(col_lens.get(6, 0), int(max_img_width * 0.13))
-        for col, ln in col_lens.items():
-            sheet.column_dimensions[get_column_letter(col)].width = ln + 2
+            # ensure screenshot column width
+            col_lens[5] = max(col_lens.get(5, 0), int(max_img_width * 0.13))
+        # determine Display width for Correct? column
+        max_corr = max(len("✅ Correct"), len("❌ Try again"))
+        # override width for column G (index 7 / letter 'G')
+        col_lens['G'] = max_corr
+        for col, length in col_lens.items():
+            # handle both numeric and letter keys
+            letter = get_column_letter(col) if isinstance(col, int) else col
+            sheet.column_dimensions[letter].width = length + 2
 
-    # save spreadsheet
-    file_path = os.path.join(out_dir, final_filename)
-    wb.save(file_path)
-    print(f"📄 Workbook export: {file_path}")
+    output_path = os.path.join(out_dir, final_filename)
+    wb.save(output_path)
+    print(f"📄 Workbook export: {output_path}")
 
-    # optional cleanup screenshot files
     if cleanup:
         for root, dirs, files in os.walk(out_dir):
-            for f in files:
-                if f.lower().endswith(".png"):
-                    os.remove(os.path.join(root, f))
+            for fname in files:
+                if fname.lower().endswith(".png"):
+                    os.remove(os.path.join(root, fname))
         print("🗑️ Screenshots removed.")
     else:
         print("📸 Screenshots retained.")
