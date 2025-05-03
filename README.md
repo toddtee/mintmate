@@ -6,7 +6,6 @@
 
 ## 🚀 Features
 
-* **Modular Architecture**: The monolithic `getpuzzle.py` has been refactored into discrete modules for better maintainability and scalability.
 * **Puzzle Extraction**: Efficiently fetches puzzles from Lichess or other sources.
 * **Screenshot Capturing**: Automatically captures visual representations of puzzles.
 * **Excel Report Generation**: Compiles puzzles into well-structured Excel sheets for easy sharing and analysis.
