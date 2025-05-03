@@ -1,0 +1,1 @@
+# src/mintmate/__init__.py

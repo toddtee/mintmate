@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name        = "mintmate"
+version     = "0.1.0"            # ← this is mandatory
+description = "Generate Lichess puzzle workbooks"
+authors     = [ { name="Todd Turner" } ]
+dependencies = [
+  "tomli",
+  "pandas",
+  "openpyxl",
+  "python-chess",
+  "selenium",
+  "Pillow"
+]
+
+[project.scripts]
+mintmate = "mintmate.main:main"

@@ -1,3 +1,37 @@
-.venv
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# VSCode workspace settings
+.vscode/
+
+# Lichess Puzzle DB
+db/*.csv
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
+
+# Your output folders
+puzzles/             # generated puzzle sheets & screenshots
+
+# macOS
+.DS_Store
+
+# Logs and SQLite (if you ever add one)
+*.log
+*.sqlite3
+
+# Output folder
 puzzles
-db/lichess_db_puzzle.csv
+
+# IDE backups
+*~ 

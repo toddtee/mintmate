@@ -1,0 +1,40 @@
+# mintmate_config.toml
+
+csv_path    = "db/lichess_db_puzzle.csv"
+output_dir  = "puzzles"
+board_theme = "green"
+piece_style = "merida"
+verbose = false
+
+[file_naming]
+override_filename    = ""                                # use template below
+term                 = 2
+week                 = 2
+template             = "Term {term} - Week {week} - Puzzles.xlsx"
+cleanup_screenshots  = false
+
+# ————— Custom puzzle sets —————
+# Each creates its own worksheet named sheet_name,
+# drawing from its own list of puzzles.
+
+[[puzzle_sets]]
+sheet_name = "Foundation"
+puzzles = [
+  { type = "mateIn1", min_rating = 500,    max_rating = 999,   count = 4 },
+  { type = "mateIn2", min_rating = 500,    max_rating = 999,   count = 1 },
+]
+
+[[puzzle_sets]]
+sheet_name = "Intermediate"
+puzzles = [
+  { type = "mateIn1", min_rating = 1000, max_rating = 1500,  count = 3 },
+  { type = "mateIn2", min_rating = 1000, max_rating = 1500,  count = 2 },
+]
+
+[[puzzle_sets]]
+sheet_name = "Mastery"
+puzzles = [
+  { type = "mateIn1", min_rating = 1500, max_rating = 2000,  count = 3 },
+  { type = "mateIn2", min_rating = 1500, max_rating = 2000,  count = 3 },
+]
+
