@@ -21,31 +21,41 @@ def load_config(path="mintmate_config.toml"):
         return tomli.load(f)
 
 
-def uci_to_san(fen, uci_moves):
-    board = chess.Board(fen)
-    san = []
-    for u in uci_moves.split():
-        move = chess.Move.from_uci(u)
-        san.append(board.san(move))
-        board.push(move)
-    return san
-
-
 def get_solution_san(original_fen, uci_moves):
-    ucs = uci_moves.split()
-    if len(ucs) <= 1:
-        return uci_to_san(original_fen, uci_moves)
+    """
+    Discard the first UCI setup move, then convert the remaining UCI moves into SAN.
+    Raises an exception if any move is illegal.
+    """
     board = chess.Board(original_fen)
-    board.push(chess.Move.from_uci(ucs[0]))
-    return [board.san(chess.Move.from_uci(u)) for u in ucs[1:]]
+    ucs = uci_moves.split()
+    # play the opponent's setup move
+    if ucs:
+        first = chess.Move.from_uci(ucs[0])
+        if first not in board.legal_moves:
+            raise ValueError(f"Illegal setup move {ucs[0]} on FEN {original_fen}")
+        board.push(first)
+    san_list = []
+    # convert and play the solver moves
+    for u in ucs[1:]:
+        move = chess.Move.from_uci(u)
+        if move not in board.legal_moves:
+            raise ValueError(f"Illegal puzzle move {u} in position {board.fen()}")
+        san_text = board.san(move)
+        san_list.append(san_text)
+        board.push(move)
+    return san_list
 
 
-def get_to_move_color(fen, uci_moves):
-    # determine side to move after the initial setup move
-    board = chess.Board(fen)
+def get_to_move_color(original_fen, uci_moves):
+    """
+    Return 'White' or 'Black' for the solver's turn: after discarding the setup move.
+    """
+    board = chess.Board(original_fen)
     ucs = uci_moves.split()
     if ucs:
-        board.push(chess.Move.from_uci(ucs[0]))
+        setup = chess.Move.from_uci(ucs[0])
+        if setup in board.legal_moves:
+            board.push(setup)
     return "White" if board.turn else "Black"
 
 
@@ -63,9 +73,9 @@ def screenshot_puzzle(puzzle_id, output_path, board_theme, piece_style):
             EC.presence_of_element_located((By.CSS_SELECTOR, "cg-board"))
         )
         time.sleep(1)
-        driver.execute_script("""
-            document.querySelectorAll('square.last-move').forEach(el => el.remove());
-        """)
+        driver.execute_script(
+            "document.querySelectorAll('square.last-move').forEach(el => el.remove());"
+        )
         board = driver.find_element(By.CSS_SELECTOR, "cg-board")
         board.screenshot(output_path)
         print(f"📸 Saved screenshot to: {output_path}")
@@ -87,7 +97,6 @@ if __name__ == "__main__":
     df = pd.read_csv(csv_path)
     os.makedirs(output_dir, exist_ok=True)
 
-    # prepare workbook with hidden AnswerKey
     ts        = datetime.now().strftime("%Y-%m-%d_%H-%M")
     wb        = Workbook()
     main_ws   = wb.active
@@ -102,7 +111,6 @@ if __name__ == "__main__":
     screenshot_paths = []
     max_img_width    = 0
 
-    # generate puzzles
     for job in puzzle_jobs:
         theme, lo, hi, cnt = job["type"], job["min_rating"], job["max_rating"], job["count"]
         print(f"\n🎯 Generating {cnt} '{theme}' puzzles [{lo}–{hi}]")
@@ -116,37 +124,31 @@ if __name__ == "__main__":
             continue
 
         for _ in range(cnt):
-            p     = sub.sample(1).iloc[0]
-            pid   = p["PuzzleId"]
-            fen   = p["FEN"]
-            moves = p["Moves"]
-            url   = f"https://lichess.org/training/{pid}?theme={board_theme}&piece={piece_style}"
-            shot  = os.path.join(output_dir, f"{pid}.png")
+            p       = sub.sample(1).iloc[0]
+            pid     = p["PuzzleId"]
+            fen     = p["FEN"]
+            moves   = p["Moves"]
+            url     = f"https://lichess.org/training/{pid}?theme={board_theme}&piece={piece_style}"
+            shot    = os.path.join(output_dir, f"{pid}.png")
 
             sol_list = get_solution_san(fen, moves)
             sol_str  = ", ".join(sol_list)
             tm       = get_to_move_color(fen, moves)
             screenshot_puzzle(pid, shot, board_theme, piece_style)
 
-            # record answer in AnswerKey
             answer_ws.append([pid, sol_str])
-
-            # append to main sheet
             main_ws.append([pid, theme, p["Rating"], tm, url, "", "", ""])
 
-            # embed screenshot in F
             row = main_ws.max_row
             with Image.open(shot) as img:
                 w, h = img.size
             max_img_width = max(max_img_width, w)
             ximg = XLImage(shot)
             ximg.width, ximg.height = w, h
-            cell = f"F{row}"
-            main_ws.add_image(ximg, cell)
+            main_ws.add_image(ximg, f"F{row}")
             main_ws.row_dimensions[row].height = h * 0.85
             screenshot_paths.append(shot)
 
-            # add correctness formula in H (blank if no student input)
             main_ws.cell(row=row, column=8).value = (
                 f'=IF(G{row}="","",'
                 f'IF(G{row}=VLOOKUP(A{row},AnswerKey!$A:$B,2,FALSE),"✅ Correct","❌ Try again"))'
@@ -163,12 +165,10 @@ if __name__ == "__main__":
     for col, ln in col_lengths.items():
         main_ws.column_dimensions[get_column_letter(col)].width = ln + 2
 
-    # save workbook
     file_path = os.path.join(output_dir, f"mintmate_puzzles_{ts}.xlsx")
     wb.save(file_path)
     print(f"\n📄 Workbook export: {file_path}")
 
-    # purge screenshots
     for f in os.listdir(output_dir):
         if f.lower().endswith(".png"):
             os.remove(os.path.join(output_dir, f))
