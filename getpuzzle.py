@@ -45,7 +45,6 @@ def get_to_move_color(fen, uci_moves):
     board = chess.Board(fen)
     ucs = uci_moves.split()
     if ucs:
-        # discard the first setup move
         board.push(chess.Move.from_uci(ucs[0]))
     return "White" if board.turn else "Black"
 
@@ -147,8 +146,11 @@ if __name__ == "__main__":
             main_ws.row_dimensions[row].height = h * 0.85
             screenshot_paths.append(shot)
 
-            # add correctness formula in H
-            main_ws.cell(row=row, column=8).value = f'=IF(G{row}=VLOOKUP(A{row},AnswerKey!$A:$B,2,FALSE),"✔ Correct","✘ Try again")'
+            # add correctness formula in H (blank if no student input)
+            main_ws.cell(row=row, column=8).value = (
+                f'=IF(G{row}="","",'
+                f'IF(G{row}=VLOOKUP(A{row},AnswerKey!$A:$B,2,FALSE),"✅ Correct","❌ Try again"))'
+            )
 
     # auto-fit columns
     col_lengths = {}
