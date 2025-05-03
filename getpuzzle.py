@@ -1,6 +1,7 @@
 import tomli
 import pandas as pd
 import os
+import re
 import chess
 from datetime import datetime
 from openpyxl import Workbook
@@ -22,20 +23,15 @@ def load_config(path="mintmate_config.toml"):
 
 
 def get_solution_san(original_fen, uci_moves):
-    """
-    Discard the first UCI setup move, then convert the remaining UCI moves into SAN.
-    Raises an exception if any move is illegal.
-    """
     board = chess.Board(original_fen)
     ucs = uci_moves.split()
-    # play the opponent's setup move
+    # discard opponent's setup move
     if ucs:
         first = chess.Move.from_uci(ucs[0])
         if first not in board.legal_moves:
             raise ValueError(f"Illegal setup move {ucs[0]} on FEN {original_fen}")
         board.push(first)
     san_list = []
-    # convert and play the solver moves
     for u in ucs[1:]:
         move = chess.Move.from_uci(u)
         if move not in board.legal_moves:
@@ -47,9 +43,6 @@ def get_solution_san(original_fen, uci_moves):
 
 
 def get_to_move_color(original_fen, uci_moves):
-    """
-    Return 'White' or 'Black' for the solver's turn: after discarding the setup move.
-    """
     board = chess.Board(original_fen)
     ucs = uci_moves.split()
     if ucs:
@@ -87,89 +80,124 @@ def screenshot_puzzle(puzzle_id, output_path, board_theme, piece_style):
 # === Main ===
 
 if __name__ == "__main__":
-    cfg         = load_config()
-    csv_path    = cfg["csv_path"]
-    output_dir  = cfg["output_dir"]
+    cfg = load_config()
+    csv_path = cfg["csv_path"]
+    base_output = cfg["output_dir"]
     board_theme = cfg["board_theme"]
     piece_style = cfg["piece_style"]
-    puzzle_jobs = cfg["puzzles"]
 
+    # naming & cleanup
+    naming_cfg = cfg.get("file_naming", {})
+    override_fn = naming_cfg.get("override_filename")
+    term = naming_cfg.get("term", "")
+    week = naming_cfg.get("week", "")
+    template = naming_cfg.get("template", "mintmate_puzzles_{timestamp}.xlsx")
+    cleanup = naming_cfg.get("cleanup_screenshots", False)
+
+    # determine base directory & final filename
+    ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    if override_fn:
+        final_filename = override_fn
+        dir_name = os.path.splitext(override_fn)[0]
+    else:
+        no_ts = re.sub(r"[\s_-]*\{timestamp\}", "", template)
+        final_filename = no_ts.format(term=term, week=week, timestamp=ts)
+        dir_name = os.path.splitext(final_filename)[0]
+    dir_clean = dir_name.replace(" ", "")
+
+    # create output folder
+    os.makedirs(base_output, exist_ok=True)
+    out_dir = os.path.join(base_output, dir_clean)
+    os.makedirs(out_dir, exist_ok=True)
+
+    # load puzzle data
     df = pd.read_csv(csv_path)
-    os.makedirs(output_dir, exist_ok=True)
 
-    ts        = datetime.now().strftime("%Y-%m-%d_%H-%M")
-    wb        = Workbook()
-    main_ws   = wb.active
-    main_ws.title = "Puzzles"
-    headers   = ["Puzzle ID","Type","Rating","To Move","Lichess URL","Screenshot","Student Answer","Correct?"]
-    main_ws.append(headers)
-
+    # setup workbook & answer key
+    wb = Workbook()
     answer_ws = wb.create_sheet(title="AnswerKey")
     answer_ws.append(["Puzzle ID","Answer"])
     answer_ws.sheet_state = "hidden"
 
-    screenshot_paths = []
-    max_img_width    = 0
+    max_img_width = 0
 
-    for job in puzzle_jobs:
-        theme, lo, hi, cnt = job["type"], job["min_rating"], job["max_rating"], job["count"]
-        print(f"\n🎯 Generating {cnt} '{theme}' puzzles [{lo}–{hi}]")
-        sub = df[
-            df["Themes"].str.contains(theme, case=False, na=False) &
-            (df["Rating"] >= lo) &
-            (df["Rating"] <= hi)
-        ]
-        if sub.empty:
-            print("⚠️ No puzzles for this config.")
-            continue
+    # iterate puzzle sets or default
+    puzzle_sets = cfg.get("puzzle_sets")
+    if puzzle_sets:
+        sets = puzzle_sets
+    else:
+        sets = [{"sheet_name": "Puzzles", "puzzles": cfg.get("puzzles", [])}]
 
-        for _ in range(cnt):
-            p       = sub.sample(1).iloc[0]
-            pid     = p["PuzzleId"]
-            fen     = p["FEN"]
-            moves   = p["Moves"]
-            url     = f"https://lichess.org/training/{pid}?theme={board_theme}&piece={piece_style}"
-            shot    = os.path.join(output_dir, f"{pid}.png")
+    for idx, pset in enumerate(sets):
+        sheet_name = pset.get("sheet_name", f"Set{idx+1}")
+        # create set-specific directory
+        sheet_dir = os.path.join(out_dir, sheet_name.replace(" ", ""))
+        os.makedirs(sheet_dir, exist_ok=True)
 
-            sol_list = get_solution_san(fen, moves)
-            sol_str  = ", ".join(sol_list)
-            tm       = get_to_move_color(fen, moves)
-            screenshot_puzzle(pid, shot, board_theme, piece_style)
+        ws = wb.active if idx == 0 else wb.create_sheet(title=sheet_name)
+        ws.title = sheet_name
+        ws.append(["Puzzle ID","Type","Rating","To Move","Lichess URL","Screenshot","Student Answer","Correct?"])
 
-            answer_ws.append([pid, sol_str])
-            main_ws.append([pid, theme, p["Rating"], tm, url, "", "", ""])
+        for job in pset.get("puzzles", []):
+            theme, lo, hi, cnt = job["type"], job["min_rating"], job["max_rating"], job["count"]
+            for _ in range(cnt):
+                sub = df[
+                    df["Themes"].str.contains(theme, case=False, na=False) &
+                    (df["Rating"] >= lo) &
+                    (df["Rating"] <= hi)
+                ]
+                if sub.empty:
+                    continue
+                p = sub.sample(1).iloc[0]
+                pid, fen, moves = p["PuzzleId"], p["FEN"], p["Moves"]
+                url = f"https://lichess.org/training/{pid}?theme={board_theme}&piece={piece_style}"
+                shot = os.path.join(sheet_dir, f"{pid}.png")
 
-            row = main_ws.max_row
-            with Image.open(shot) as img:
-                w, h = img.size
-            max_img_width = max(max_img_width, w)
-            ximg = XLImage(shot)
-            ximg.width, ximg.height = w, h
-            main_ws.add_image(ximg, f"F{row}")
-            main_ws.row_dimensions[row].height = h * 0.85
-            screenshot_paths.append(shot)
+                sol = get_solution_san(fen, moves)
+                answer_ws.append([pid, ", ".join(sol)])
+                tm = get_to_move_color(fen, moves)
+                screenshot_puzzle(pid, shot, board_theme, piece_style)
 
-            main_ws.cell(row=row, column=8).value = (
-                f'=IF(G{row}="","",'
-                f'IF(G{row}=VLOOKUP(A{row},AnswerKey!$A:$B,2,FALSE),"✅ Correct","❌ Try again"))'
-            )
+                ws.append([pid, theme, p["Rating"], tm, url, "", "", ""])
+                r = ws.max_row
+                with Image.open(shot) as img:
+                    w, h = img.size
+                max_img_width = max(max_img_width, w)
+                ximg = XLImage(shot)
+                ximg.width, ximg.height = w, h
+                ws.add_image(ximg, f"F{r}")
+                ws.row_dimensions[r].height = h * 0.85
+                ws.cell(row=r, column=8).value = (
+                    f'=IF(G{r}="","",'
+                    f'IF(G{r}=VLOOKUP(A{r},AnswerKey!$A:$B,2,FALSE),"✅ Correct","❌ Try again"))'
+                )
 
     # auto-fit columns
-    col_lengths = {}
-    for row in main_ws.iter_rows(min_row=1, max_row=main_ws.max_row, min_col=1, max_col=main_ws.max_column):
-        for cell in row:
-            ln = len(str(cell.value)) if cell.value is not None else 0
-            col_lengths[cell.column] = max(col_lengths.get(cell.column, 0), ln)
-    if max_img_width:
-        col_lengths[6] = max(col_lengths.get(6, 0), int(max_img_width * 0.13))
-    for col, ln in col_lengths.items():
-        main_ws.column_dimensions[get_column_letter(col)].width = ln + 2
+    for sheet in wb.worksheets:
+        if sheet.title == "AnswerKey":
+            continue
+        col_lens = {}
+        for row in sheet.iter_rows(min_row=1, max_row=sheet.max_row, min_col=1, max_col=sheet.max_column):
+            for cell in row:
+                val = cell.value if cell.value is not None else ""
+                ln = len(str(val))
+                col_lens[cell.column] = max(col_lens.get(cell.column, 0), ln)
+        if max_img_width > 0:
+            col_lens[6] = max(col_lens.get(6, 0), int(max_img_width * 0.13))
+        for col, ln in col_lens.items():
+            sheet.column_dimensions[get_column_letter(col)].width = ln + 2
 
-    file_path = os.path.join(output_dir, f"mintmate_puzzles_{ts}.xlsx")
+    # save spreadsheet
+    file_path = os.path.join(out_dir, final_filename)
     wb.save(file_path)
-    print(f"\n📄 Workbook export: {file_path}")
+    print(f"📄 Workbook export: {file_path}")
 
-    for f in os.listdir(output_dir):
-        if f.lower().endswith(".png"):
-            os.remove(os.path.join(output_dir, f))
-    print("🗑️ All screenshots removed from puzzle folder.")
+    # optional cleanup screenshot files
+    if cleanup:
+        for root, dirs, files in os.walk(out_dir):
+            for f in files:
+                if f.lower().endswith(".png"):
+                    os.remove(os.path.join(root, f))
+        print("🗑️ Screenshots removed.")
+    else:
+        print("📸 Screenshots retained.")
